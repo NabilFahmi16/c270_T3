@@ -3,6 +3,7 @@ from flask import Flask, jsonify, request, redirect
 
 app = Flask(__name__)
 
+# In-memory storage
 url_map = {
     "ci": "https://github.com/NabilFahmi16/c270_T3/actions",
     "repo": "https://github.com/NabilFahmi16/c270_T3"
