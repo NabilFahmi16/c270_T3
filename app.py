@@ -1,4 +1,3 @@
-# app.py (BASIC VERSION)
 from flask import Flask, jsonify, request, redirect
 
 app = Flask(__name__)
@@ -20,8 +19,10 @@ def list_links():
 @app.route('/shorten', methods=['POST'])
 def shorten():
     data = request.get_json()
-    if not data or 'alias' not in data or 'url' not in 
+    # ──────────────────────────────────────── fixed line
+    if not data or 'alias' not in data or 'url' not in data:
         return jsonify({"error": "Missing alias or url"}), 400
+    
     url_map[data['alias']] = data['url']
     return jsonify({"message": "Added"}), 201
 
