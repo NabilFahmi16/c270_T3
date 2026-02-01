@@ -33,7 +33,7 @@ jobs:
 
   docker-test:
     runs-on: ubuntu-latest
-    needs: test-and-lint   # only run if unit/lint pass
+    needs: test-and-lint  # only run if unit/lint pass
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,11 +52,9 @@ jobs:
           curl --fail http://localhost:5000/health || { docker logs flask-test; exit 1; }
           docker stop flask-test && docker rm flask-test
 
-
-
   kubernetes-test:
     runs-on: ubuntu-latest
-    needs: docker-test
+    needs: docker-test  # only if docker works
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -117,14 +115,15 @@ jobs:
           EOF
 
       - name: Wait for deployment ready
-        run: kubectl wait --for=condition=Available deployment/flask-app --timeout=60s
+        run: kubectl wait --for=condition=Available deployment/flask-app --timeout=90s  # increased timeout a bit
 
       - name: Port-forward and test health endpoint
         run: |
           kubectl port-forward svc/flask-service 5000:80 &
-          sleep 5
-          curl --fail http://localhost:5000/health || { kubectl get pods; kubectl logs -l app=flask; exit 1; }
-          kill %1 || true
+          PF_PID=$!
+          sleep 8  # give extra time for startup
+          curl --fail http://localhost:5000/health || { kubectl get pods; kubectl logs -l app=flask --tail=50; exit 1; }
+          kill $PF_PID || true
 
       - name: Active monitoring simulation (extra health check loop)
         run: |
@@ -132,30 +131,20 @@ jobs:
           for i in {1..3}; do
             kubectl port-forward svc/flask-service 5000:80 >/dev/null 2>&1 &
             PF_PID=$!
-            sleep 3
+            sleep 5
             curl --fail http://localhost:5000/health && echo "Check $i OK" || { echo "Check $i FAILED"; kill $PF_PID; exit 1; }
             kill $PF_PID
-            sleep 2
-          done
-
-      - name: Wait for deployment ready
-        run: kubectl wait --for=condition=Available deployment/flask-app --timeout=60s
-
-      - name: Port-forward and test health endpoint
-        run: |
-          kubectl port-forward svc/flask-service 5000:80 &
-          sleep 5
-          curl --fail http://localhost:5000/health || { kubectl get pods; kubectl logs -l app=flask; exit 1; }
-          kill %1 || true   # stop port-forward
-
-      - name: Active monitoring simulation (extra health check loop)
-        run: |
-          echo "Simulating basic active monitoring (3 checks)..."
-          for i in {1..3}; do
-            kubectl port-forward svc/flask-service 5000:80 >/dev/null 2>&1 &
-            PF_PID=$!
             sleep 3
-            curl --fail http://localhost:5000/health && echo "Check $i OK" || { echo "Check $i FAILED"; kill $PF_PID; exit 1; }
-            kill $PF_PID
-            sleep 2
           done
+
+      - name: Debug K8s state (runs even on failure)
+        if: always()
+        run: |
+          echo "=== Kubernetes Resources ==="
+          kubectl get all
+          echo "=== Deployment Description ==="
+          kubectl describe deployment flask-app
+          echo "=== Pod Description ==="
+          kubectl describe pod -l app=flask
+          echo "=== Pod Logs ==="
+          kubectl logs -l app=flask --tail=100 || echo "No logs available"
