@@ -52,9 +52,11 @@ jobs:
           curl --fail http://localhost:5000/health || { docker logs flask-test; exit 1; }
           docker stop flask-test && docker rm flask-test
 
+
+
   kubernetes-test:
     runs-on: ubuntu-latest
-    needs: docker-test   # only if docker works
+    needs: docker-test
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -62,12 +64,12 @@ jobs:
       - name: Set up kind
         uses: helm/kind-action@v1
         with:
-          version: v0.23.0   # stable recent version
+          version: v0.23.0
           config: |
             kind: Cluster
             apiVersion: kind.x-k8s.io/v1alpha4
             nodes:
-            - role: control-plane
+              - role: control-plane
 
       - name: Build Docker image for KinD
         run: |
@@ -76,8 +78,6 @@ jobs:
       - name: Load image into KinD
         run: kind load docker-image my-flask-app:test
 
-      # Minimal Kubernetes manifests (create these files in your repo if not already present)
-      # You can inline them or keep as k8s/deployment.yaml + k8s/service.yaml
       - name: Deploy to KinD
         run: |
           cat <<EOF | kubectl apply -f -
@@ -115,6 +115,28 @@ jobs:
               targetPort: 5000
             type: ClusterIP
           EOF
+
+      - name: Wait for deployment ready
+        run: kubectl wait --for=condition=Available deployment/flask-app --timeout=60s
+
+      - name: Port-forward and test health endpoint
+        run: |
+          kubectl port-forward svc/flask-service 5000:80 &
+          sleep 5
+          curl --fail http://localhost:5000/health || { kubectl get pods; kubectl logs -l app=flask; exit 1; }
+          kill %1 || true
+
+      - name: Active monitoring simulation (extra health check loop)
+        run: |
+          echo "Simulating basic active monitoring (3 checks)..."
+          for i in {1..3}; do
+            kubectl port-forward svc/flask-service 5000:80 >/dev/null 2>&1 &
+            PF_PID=$!
+            sleep 3
+            curl --fail http://localhost:5000/health && echo "Check $i OK" || { echo "Check $i FAILED"; kill $PF_PID; exit 1; }
+            kill $PF_PID
+            sleep 2
+          done
 
       - name: Wait for deployment ready
         run: kubectl wait --for=condition=Available deployment/flask-app --timeout=60s
