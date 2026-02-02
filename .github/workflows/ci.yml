@@ -135,6 +135,15 @@ jobs:
             exit 1
           }
           kill $PF_PID || true
+      - name: Run browser-based rendering tests
+        run: |
+          kubectl port-forward svc/flask-service 5000:80 &
+          PF_PID=$!
+          sleep 12  # give time for app + port-forward
+
+          pytest tests/test_rendering.py -v || { echo "Rendering / UI test failed"; exit 1; }
+
+          kill $PF_PID || true
 
       - name: Simulate active monitoring (3 health checks)
         run: |
