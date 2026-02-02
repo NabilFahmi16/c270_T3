@@ -14,26 +14,22 @@ def browser():
 
 @pytest.fixture
 def logged_in_page(browser):
-    """Fixture that returns a logged-in page at home"""
     page = browser.new_page()
     
-    # First go to login page
     page.goto("http://localhost:5000/login", wait_until="networkidle")
     
-    # Register a test user (if needed) or just login
-    # For simplicity: assume we can register during test
+    # Fill login form (assumes user already exists or you pre-create in another test/fixture)
     page.fill('input[name="username"]', "testuser")
-    page.fill('input[name="email"]', "test@example.com")
     page.fill('input[name="password"]', "testpass123")
-    page.click('button:has-text("Register")')
     
-    # Wait for redirect to home
-    page.wait_for_url("http://localhost:5000/", timeout=10000)
+    page.click('button:has-text("Login")')
+    
+    page.wait_for_url("http://localhost:5000/", timeout=15000)
+    page.wait_for_selector("h1", timeout=10000)
     
     yield page
-    
     page.close()
-
+    
 def test_homepage_renders_correctly_after_login(logged_in_page):
     page = logged_in_page
     
