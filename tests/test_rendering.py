@@ -18,14 +18,22 @@ def logged_in_page(browser):
     
     page.goto("http://localhost:5000/login", wait_until="networkidle")
     
-    # Fill login form (assumes user already exists or you pre-create in another test/fixture)
+    # Switch to Register tab
+    page.click('div.tab:has-text("Register")')
+    page.wait_for_selector('#registerForm', state="visible", timeout=5000)
+    
+    # Fill and submit registration
     page.fill('input[name="username"]', "testuser")
+    page.fill('input[name="email"]', "test@example.com")
     page.fill('input[name="password"]', "testpass123")
+    page.click('button:has-text("Register")')
     
-    page.click('button:has-text("Login")')
-    
-    page.wait_for_url("http://localhost:5000/", timeout=15000)
+    # Wait for successful redirect to home
+    page.wait_for_url("http://localhost:5000/", timeout=20000)
     page.wait_for_selector("h1", timeout=10000)
+    
+    # Optional: verify we are really logged in
+    expect(page.locator("text=Welcome, testuser")).to_be_visible()
     
     yield page
     page.close()
