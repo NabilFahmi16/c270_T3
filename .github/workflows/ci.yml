@@ -18,6 +18,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -25,7 +33,9 @@ jobs:
 
       - name: Lint with flake8
         run: |
+          # Strict mode - fail on selected errors
           python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || { echo "Lint errors found (strict mode)"; exit 1; }
+          # Full report (warnings allowed)
           python -m flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Run pytest
@@ -33,7 +43,7 @@ jobs:
 
   docker-test:
     runs-on: ubuntu-latest
-    needs: test-and-lint  # only run if unit/lint pass
+    needs: test-and-lint
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,14 +52,17 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        run: |
-          docker build -t my-flask-app:test -f dockerfile .
+        run: docker build -t my-flask-app:test -f dockerfile .
 
       - name: Run container and test health
         run: |
           docker run -d -p 5000:5000 --name flask-test my-flask-app:test
-          sleep 8
-          curl --fail http://localhost:5000/health || { docker logs flask-test; exit 1; }
+          sleep 10
+          curl --fail --retry 3 --retry-delay 3 http://localhost:5000/health || {
+            echo "Health check failed - showing container logs:"
+            docker logs flask-test
+            exit 1
+          }
           docker stop flask-test && docker rm flask-test
 
   kubernetes-test:
@@ -59,24 +72,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ─── Python + test dependencies for rendering tests ───
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-k8s-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-k8s-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Install Playwright if your test_rendering.py uses it
+          pip install pytest-playwright playwright
+          # Install browsers (chromium is usually enough)
+          python -m playwright install --with-deps chromium
+
+      # ─── Kind / Kubernetes setup ───
       - name: Set up kind
         uses: helm/kind-action@v1
         id: kind
         with:
           version: v0.23.0
-          cluster_name: kind-ci     # ← explicit name to avoid conflicts
+          cluster_name: kind-ci
           config: kind-config.yaml
-          wait: 120s                # wait longer for cluster readiness
+          wait: 120s
 
-      - name: Verify kind cluster created
+      - name: Verify kind cluster
         run: |
           kind get clusters
-          kubectl cluster-info --context kind-kind-ci || { echo "Cluster context not found or broken!"; exit 1; }
+          kubectl cluster-info --context kind-kind-ci || { echo "Cluster context broken"; exit 1; }
           kubectl get nodes
 
       - name: Build Docker image for KinD
-        run: |
-          docker build -t my-flask-app:test -f dockerfile .
+        run: docker build -t my-flask-app:test -f dockerfile .
 
       - name: Load image into KinD
         run: kind load docker-image my-flask-app:test --name kind-ci
@@ -119,30 +155,34 @@ jobs:
             type: ClusterIP
           EOF
 
-      - name: Wait for deployment to be available
+      - name: Wait for deployment ready
         run: kubectl wait --for=condition=Available deployment/flask-app --timeout=120s
 
       - name: Port-forward and test health endpoint
         run: |
-          kubectl port-forward svc/flask-service 5000:80 &
+          kubectl port-forward svc/flask-service 5000:80 >/dev/null 2>&1 &
           PF_PID=$!
           sleep 10
           curl --fail --retry 3 --retry-delay 3 http://localhost:5000/health || {
-            echo "Health check failed - debug:"
+            echo "Health check failed - debug info:"
             kubectl get pods
             kubectl describe pod -l app=flask
             kubectl logs -l app=flask --tail=100
+            kill $PF_PID || true
             exit 1
           }
           kill $PF_PID || true
+
       - name: Run browser-based rendering tests
         run: |
-          kubectl port-forward svc/flask-service 5000:80 &
+          kubectl port-forward svc/flask-service 5000:80 >/dev/null 2>&1 &
           PF_PID=$!
-          sleep 12  # give time for app + port-forward
-
-          pytest tests/test_rendering.py -v || { echo "Rendering / UI test failed"; exit 1; }
-
+          sleep 15
+          pytest tests/test_rendering.py -v || {
+            echo "Rendering / UI test failed"
+            kill $PF_PID || true
+            exit 1
+          }
           kill $PF_PID || true
 
       - name: Simulate active monitoring (3 health checks)
@@ -152,42 +192,24 @@ jobs:
             kubectl port-forward svc/flask-service 5000:80 >/dev/null 2>&1 &
             PF_PID=$!
             sleep 6
-            curl --fail http://localhost:5000/health && echo "Check $i OK" || { echo "Check $i FAILED"; kill $PF_PID; exit 1; }
+            curl --fail http://localhost:5000/health && echo "Check $i OK" || {
+              echo "Check $i FAILED"
+              kill $PF_PID || true
+              exit 1
+            }
             kill $PF_PID || true
             sleep 4
           done
 
+      # ─── Debug steps (always run) ───
       - name: Debug Kubernetes state (always)
         if: always()
         run: |
-          echo "Clusters:"
-          kind get clusters || echo "kind get clusters failed"
-          echo ""
-          echo "Current context:"
-          kubectl config current-context || echo "No context"
-          echo ""
-          echo "Nodes:"
-          kubectl get nodes || echo "No nodes"
-          echo ""
-          echo "All resources:"
-          kubectl get all -o wide || echo "kubectl failed"
-          echo ""
-          echo "Deployment describe:"
-          kubectl describe deployment flask-app || echo "No deployment"
-          echo ""
-          echo "Pods describe:"
-          kubectl describe pods -l app=flask || echo "No pods"
-          echo ""
-          echo "Pod logs:"
-          kubectl logs -l app=flask --tail=150 || echo "No logs"
-      - name: Debug K8s state (runs even on failure)
-        if: always()
-        run: |
           echo "=== Kubernetes Resources ==="
-          kubectl get all
+          kubectl get all || true
           echo "=== Deployment Description ==="
-          kubectl describe deployment flask-app
+          kubectl describe deployment flask-app || true
           echo "=== Pod Description ==="
-          kubectl describe pod -l app=flask
+          kubectl describe pod -l app=flask || true
           echo "=== Pod Logs ==="
           kubectl logs -l app=flask --tail=100 || echo "No logs available"
