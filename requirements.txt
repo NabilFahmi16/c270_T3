@@ -1,4 +1,16 @@
-Flask==3.0.0
-Werkzeug==3.0.1
-pytest==7.4.3
-flake8==7.1.1
+# Core web framework
+Flask==3.0.3                  # Latest stable in 3.0.x series (security + bug fixes)
+Werkzeug==3.0.4               # Matches Flask 3.0.x (latest patch)
+
+# Testing
+pytest==8.3.3                 # Latest stable (much newer than 7.4.3 - better plugins/support)
+pytest-playwright==0.5.1      # For browser-based rendering tests
+playwright==1.49.0            # Latest compatible with pytest-playwright
+
+# Linting & code quality
+flake8==7.1.1                 # You already have this - good choice
+flake8-docstrings==1.7.0      # Optional: check docstrings (nice for school project)
+
+# Optional but very useful for your project
+gunicorn==23.0.0              # Production server (Render.com needs this instead of Flask dev server)
+python-dotenv==1.0.1          # Load .env files (for SECRET_KEY etc.)
