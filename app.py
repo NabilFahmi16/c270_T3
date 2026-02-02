@@ -635,6 +635,28 @@ HOME_TEMPLATE = """
 
 # --- ROUTES ---
 @app.route('/')
+@login_required
+def home():
+    # Filter links by user
+    user_links = {}
+    for alias, data in url_data["links"].items():
+        if data.get("user_id") == session['user_id']:
+            user_links[alias] = data
+
+    # Calculate statistics
+    stats = {
+        "total_links": len(user_links),
+        "total_clicks": sum(link.get("clicks", 0) for link in user_links.values()),
+        "active_links": sum(1 for link in user_links.values() if not is_expired(link)),
+        "expiring_soon": sum(1 for link in user_links.values() if is_expiring_soon(link))
+    }
+
+    return render_template_string(HOME_TEMPLATE,
+                                  links=user_links,
+                                  stats=stats,
+                                  username=session.get('username', 'Guest'))
+    
+    
 @app.route('/health')
 def health():
     return jsonify({
@@ -643,27 +665,6 @@ def health():
         "version": "2.0",
         "timestamp": datetime.utcnow().isoformat()
     }), 200
-    
-@login_required
-def home():
-    # Filter links by user
-    user_links = {}
-    for alias, data in url_data["links"].items():
-        if data.get("user_id") == session['user_id']:
-            user_links[alias] = data
-    
-    # Calculate statistics
-    stats = {
-        "total_links": len(user_links),
-        "total_clicks": sum(link.get("clicks", 0) for link in user_links.values()),
-        "active_links": sum(1 for link in user_links.values() if not is_expired(link)),
-        "expiring_soon": sum(1 for link in user_links.values() if is_expiring_soon(link))
-    }
-    
-    return render_template_string(HOME_TEMPLATE, 
-                                  links=user_links,
-                                  stats=stats,
-                                  username=session.get('username', 'Guest'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
