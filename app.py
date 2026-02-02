@@ -635,6 +635,15 @@ HOME_TEMPLATE = """
 
 # --- ROUTES ---
 @app.route('/')
+@app.route('/health')
+def health():
+    return jsonify({
+        "status": "ok",
+        "app": "url-shortener",
+        "version": "2.0",
+        "timestamp": datetime.utcnow().isoformat()
+    }), 200
+    
 @login_required
 def home():
     # Filter links by user
