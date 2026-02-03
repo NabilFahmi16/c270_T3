@@ -15,26 +15,25 @@ def browser():
 @pytest.fixture
 def logged_in_page(browser):
     page = browser.new_page()
-    
-    page.goto("http://localhost:5000/login", wait_until="networkidle")
-    
-    # Switch to Register tab
+
+    page.goto("http://127.0.0.1:5000/login", wait_until="domcontentloaded")
+
     page.click('div.tab:has-text("Register")')
     page.wait_for_selector('#registerForm', state="visible", timeout=5000)
-    
-    # Fill and submit registration
-    page.fill('input[name="username"]', "testuser")
-    page.fill('input[name="email"]', "test@example.com")
+
+    # Unique username every run
+    username = f"testuser_{uuid.uuid4().hex[:8]}"
+
+    page.fill('input[name="username"]', username)
+    page.fill('input[name="email"]', f"{username}@example.com")
     page.fill('input[name="password"]', "testpass123")
     page.click('button:has-text("Register")')
-    
-    # Wait for successful redirect to home
-    page.wait_for_url("http://localhost:5000/", timeout=20000)
+
+    page.wait_for_url("http://127.0.0.1:5000/", timeout=20000)
     page.wait_for_selector("h1", timeout=10000)
-    
-    # Optional: verify we are really logged in
-    expect(page.locator("text=Welcome, testuser")).to_be_visible()
-    
+
+    expect(page.locator(f"text=Welcome, {username}")).to_be_visible()
+
     yield page
     page.close()
     
