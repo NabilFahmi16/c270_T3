@@ -19,21 +19,25 @@ def logged_in_page(browser):
 
     page.goto("http://127.0.0.1:5000/login", wait_until="domcontentloaded")
 
+    # Click Register tab
     page.click('div.tab:has-text("Register")')
-    page.wait_for_selector('#registerForm', state="visible", timeout=5000)
 
-    # Unique username every run
+    # Wait until Register form is visible
+    register_form = page.locator("#registerForm")
+    expect(register_form).to_be_visible(timeout=10000)
+
+    # Use selectors scoped INSIDE the register form (avoids picking hidden login inputs)
     username = f"testuser_{uuid.uuid4().hex[:8]}"
+    register_form.locator('input[name="username"]').fill(username)
+    register_form.locator('input[name="email"]').fill(f"{username}@example.com")
+    register_form.locator('input[name="password"]').fill("testpass123")
+    register_form.locator('button:has-text("Register")').click()
 
-    page.fill('input[name="username"]', username)
-    page.fill('input[name="email"]', f"{username}@example.com")
-    page.fill('input[name="password"]', "testpass123")
-    page.click('button:has-text("Register")')
-
+    # Wait for redirect to home
     page.wait_for_url("http://127.0.0.1:5000/", timeout=20000)
-    page.wait_for_selector("h1", timeout=10000)
 
-    expect(page.locator(f"text=Welcome, {username}")).to_be_visible()
+    # Confirm logged in
+    expect(page.locator(f"text=Welcome, {username}")).to_be_visible(timeout=10000)
 
     yield page
     page.close()
