@@ -1,6 +1,7 @@
 from playwright.sync_api import sync_playwright, expect
 import pytest
 import time
+import uuid
 
 # Increase timeout if needed (Kubernetes startup can be slow)
 pytestmark = pytest.mark.timeout(60)
