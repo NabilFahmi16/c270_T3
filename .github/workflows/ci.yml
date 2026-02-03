@@ -34,9 +34,25 @@ jobs:
           python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           python -m flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
+      - name: Start Flask app in background (for Playwright tests)
+        run: |
+          nohup python app.py > app.log 2>&1 &
+          sleep 3
+
+      - name: Wait until app is ready
+        run: |
+          curl --fail --retry 10 --retry-delay 2 http://127.0.0.1:5000/health
+
       - name: Run pytest (all tests)
         run: |
           python -m pytest -v
+
+      - name: Show app log if failed
+        if: failure()
+        run: |
+          echo "===== Flask app log ====="
+          cat app.log || true
+
 
           
   docker-test:
