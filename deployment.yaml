@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: urlshort
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: urlshort
+  template:
+    metadata:
+      labels:
+        app: urlshort
+    spec:
+      containers:
+        - name: urlshort
+          image: c270-urlshort:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
