@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: urlshort
+  name: flask-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: urlshort
+      app: flask
   template:
     metadata:
       labels:
-        app: urlshort
+        app: flask
     spec:
       containers:
-        - name: urlshort
-          image: c270-urlshort:1.0
-          imagePullPolicy: IfNotPresent
+        - name: flask
+          image: my-flask-app:test
+          imagePullPolicy: Never
           ports:
             - containerPort: 5000
           readinessProbe:
