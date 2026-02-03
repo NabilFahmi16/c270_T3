@@ -14,3 +14,4 @@ flake8-docstrings==1.7.0      # Optional: check docstrings (nice for school proj
 # Optional but very useful for your project
 gunicorn==23.0.0              # Production server (Render.com needs this instead of Flask dev server)
 python-dotenv==1.0.1          # Load .env files (for SECRET_KEY etc.)
+pytest-timeout==2.3.1
