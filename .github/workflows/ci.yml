@@ -113,51 +113,12 @@ jobs:
       - name: Load image into KinD
         run: kind load docker-image my-flask-app:test --name kind-ci
 
-      - name: Deploy to KinD (prefer repo YAML if present)
+      - name: Deploy to KinD
         run: |
           set -e
-          if [ -f deployment.yaml ] && [ -f service.yaml ]; then
-            echo "Using deployment.yaml and service.yaml"
-            kubectl apply -f deployment.yaml
-            kubectl apply -f service.yaml
-          else
-            echo "deployment.yaml/service.yaml not found, using inline manifest"
-            cat <<EOF | kubectl apply -f -
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: flask-app
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: flask
-              template:
-                metadata:
-                  labels:
-                    app: flask
-                spec:
-                  containers:
-                  - name: flask
-                    image: my-flask-app:test
-                    imagePullPolicy: Never
-                    ports:
-                    - containerPort: 5000
-            ---
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: flask-service
-            spec:
-              selector:
-                app: flask
-              ports:
-              - protocol: TCP
-                port: 80
-                targetPort: 5000
-              type: ClusterIP
-            EOF
-          fi
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
 
       - name: Wait for deployment ready
         run: kubectl wait --for=condition=Available deployment/flask-app --timeout=180s
