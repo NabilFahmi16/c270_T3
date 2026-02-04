@@ -200,6 +200,7 @@ kubernetes-test:
     - name: Load image into KinD
       run: kind load docker-image my-flask-app:test --name kind-ci
 
+
         run: |
           kubectl get all
           kubectl describe deployment flask-app
