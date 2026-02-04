@@ -1,6 +1,6 @@
 # Core web framework
 Flask==3.0.3                  # Latest stable in 3.0.x series (security + bug fixes)
-Werkzeug==3.0.4               # Matches Flask 3.0.x (latest patch)
+Werkzeug==3.1.5              # Matches Flask 3.0.x (latest patch)
 playwright
 
 # Testing
