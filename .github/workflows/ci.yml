@@ -1,6 +1,6 @@
 name: CI/CD Pipeline
 
-# Trigger pipeline on pushes and PRs to main branches
+# Trigger pipeline on pushes and PRs to main branche
 on:
   push:
     branches: [ main, master, basic-version ]
