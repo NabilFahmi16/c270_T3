@@ -172,50 +172,34 @@ jobs:
   # -------------------------------
   # 4️⃣ KUBERNETES (KIND) TEST
   # -------------------------------
-  kubernetes-test:
-    runs-on: ubuntu-latest
-    needs: trivy-security
-    timeout-minutes: 15
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+kubernetes-test:
+  runs-on: ubuntu-latest
+  needs: trivy-security
+  timeout-minutes: 15
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      # Create local Kubernetes cluster using KinD
-      - name: Set up kind
-        uses: helm/kind-action@v1
+    - name: Set up kind
+      uses: helm/kind-action@v1
+      with:
+        version: v0.23.0
+        cluster_name: kind-ci
+        config: kind-config.yaml
+        wait: 120s
 
-      # Verify cluster is healthy
-      - name: Verify kind cluster
-        run: |
-          kubectl get nodes
+    - name: Verify kind cluster
+      run: |
+        kind get clusters
+        kubectl cluster-info --context kind-kind-ci
+        kubectl get nodes
 
-      # Load Docker image into KinD cluster
-      - name: Build Docker image for KinD
-        run: docker build -t my-flask-app:test -f dockerfile .
+    - name: Build Docker image for KinD
+      run: docker build -t my-flask-app:test -f dockerfile .
 
-      - name: Load image into KinD
-        run: kind load docker-image my-flask-app:test --name kind-ci
+    - name: Load image into KinD
+      run: kind load docker-image my-flask-app:test --name kind-ci
 
-      # Deploy app to Kubernetes
-      - name: Deploy to KinD
-        run: |
-          kubectl apply -f deployment.yaml
-          kubectl apply -f service.yaml
-
-      # Wait until deployment is available
-      - name: Wait for deployment ready
-        run: kubectl wait --for=condition=Available deployment/flask-app --timeout=180s
-
-      # Expose service and verify health endpoint
-      - name: Port-forward and test health endpoint
-        run: |
-          kubectl port-forward svc/flask-service 5000:80 &
-          sleep 10
-          curl --fail http://localhost:5000/health
-
-      # Debug info always printed (even on failure)
-      - name: Debug Kubernetes state (always)
-        if: always()
         run: |
           kubectl get all
           kubectl describe deployment flask-app
