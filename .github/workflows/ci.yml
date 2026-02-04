@@ -1,6 +1,6 @@
 name: CI/CD Pipeline
 
-# Trigger pipeline on pushes and PRs to main branche
+# Trigger pipeline on pushes and PRs to main branches
 on:
   push:
     branches: [ main, master, basic-version ]
@@ -8,7 +8,6 @@ on:
     branches: [ main, master, basic-version ]
 
 jobs:
-
   # -------------------------------
   # 1️⃣ TEST + LINT JOB
   # -------------------------------
@@ -16,55 +15,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # Pull repository code into the runner
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Install Python 3.11 for app + tests
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"  # speeds up dependency installs
+          cache: "pip"
 
-      # Install Python dependencies from requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Install browser needed for Playwright tests
+      # ✅ Fix: Playwright must be installed before running "python -m playwright ..."
+      - name: Install Playwright
+        run: |
+          pip install playwright
+
       - name: Install Playwright browsers
         run: |
           python -m playwright install --with-deps chromium
 
-      # Run flake8 linting
-      # First command: fails on critical syntax errors
-      # Second command: reports style issues but does NOT fail build
       - name: Lint with flake8 (strict + report)
         run: |
           python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           python -m flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      # Start Flask app in background for integration tests
       - name: Start Flask app in background (for Playwright tests)
         run: |
           nohup python app.py > app.log 2>&1 &
           sleep 3
 
-      # Ensure app is running before testing
-      # Fails pipeline if /health is not reachable
       - name: Wait until app is ready
         run: |
           curl --fail --retry 10 --retry-delay 2 http://127.0.0.1:5000/health
 
-      # Run all pytest test cases
-      # Any failing test will fail the pipeline
       - name: Run pytest (all tests)
         run: |
           python -m pytest -v
 
-      # Print Flask logs if any previous step failed
       - name: Show app log if failed
         if: failure()
         run: |
@@ -76,27 +67,22 @@ jobs:
   # -------------------------------
   docker-test:
     runs-on: ubuntu-latest
-    needs: test-and-lint  # runs only if tests pass
+    needs: test-and-lint
     timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Enable Docker Buildx (modern Docker builder)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build Docker image from Dockerfile
       - name: Build Docker image
         run: docker build -t my-flask-app:test -f dockerfile .
 
-      # Run container and verify health endpoint
-      # If health check fails → pipeline fails
       - name: Run container and test health
         run: |
           set -e
 
-          # Cleanup container even if job fails
           cleanup() {
             docker logs flask-test || true
             docker rm -f flask-test || true
@@ -118,33 +104,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Patch deployment.yaml in CI only
-      # Purpose: avoid failing Trivy on readOnlyRootFilesystem rule (KSV014)
+      # If you already fixed deployment.yaml in the repo,
+      # you can REMOVE this patch step entirely.
       - name: Patch Kubernetes deployment securityContext (CI only)
         shell: bash
         run: |
-          # Adds:
-          # securityContext.readOnlyRootFilesystem: true
-          # + writable /tmp volume
-          # Improves container security and passes Trivy scan
-          python - <<'PY'
-          # (Python script omitted here for brevity)
-          PY
+          echo "Skipping patch step (deployment.yaml should already be fixed in repo)."
 
-      # Install Trivy and cache vulnerability DB
       - name: Install Trivy (cache DB)
         uses: aquasecurity/trivy-action@0.24.0
         with:
           scan-type: "fs"
           scan-ref: "."
           format: "table"
-          exit-code: "0"  # never fail here (setup only)
+          exit-code: "0"
 
-      # Scan repository for:
-      # - dependency vulnerabilities
-      # - secrets
-      # - Kubernetes misconfigurations
-      # Fails on HIGH or CRITICAL
       - name: Trivy FS scan (repo) - vuln + secrets + misconfig
         uses: aquasecurity/trivy-action@0.24.0
         with:
@@ -155,53 +129,80 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-      # Build Docker image for vulnerability scanning
       - name: Build Docker image (for Trivy image scan)
         run: docker build -t my-flask-app:test -f dockerfile .
 
-      # Scan Docker image for OS & library vulnerabilities
-      # Pipeline fails if HIGH/CRITICAL found
       - name: Trivy image scan - vulnerabilities
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: "my-flask-app:test"
           severity: "HIGH,CRITICAL"
           ignore-unfixed: true
+          vuln-type: "os,library"
+          format: "table"
           exit-code: "1"
 
   # -------------------------------
   # 4️⃣ KUBERNETES (KIND) TEST
   # -------------------------------
-kubernetes-test:
-  runs-on: ubuntu-latest
-  needs: trivy-security
-  timeout-minutes: 15
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+  kubernetes-test:
+    runs-on: ubuntu-latest
+    needs: trivy-security
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up kind
-      uses: helm/kind-action@v1
-      with:
-        version: v0.23.0
-        cluster_name: kind-ci
-        config: kind-config.yaml
-        wait: 120s
+      - name: Set up kind
+        uses: helm/kind-action@v1
+        with:
+          version: v0.23.0
+          cluster_name: kind-ci
+          config: kind-config.yaml
+          wait: 120s
 
-    - name: Verify kind cluster
-      run: |
-        kind get clusters
-        kubectl cluster-info --context kind-kind-ci
-        kubectl get nodes
-
-    - name: Build Docker image for KinD
-      run: docker build -t my-flask-app:test -f dockerfile .
-
-    - name: Load image into KinD
-      run: kind load docker-image my-flask-app:test --name kind-ci
-
-
+      - name: Verify kind cluster
         run: |
-          kubectl get all
-          kubectl describe deployment flask-app
-          kubectl logs -l app=flask
+          kind get clusters
+          kubectl cluster-info --context kind-kind-ci
+          kubectl get nodes
+
+      - name: Build Docker image for KinD
+        run: docker build -t my-flask-app:test -f dockerfile .
+
+      - name: Load image into KinD
+        run: kind load docker-image my-flask-app:test --name kind-ci
+
+      - name: Deploy to KinD
+        run: |
+          set -e
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+      - name: Wait for deployment ready
+        run: kubectl wait --for=condition=Available deployment/flask-app --timeout=180s
+
+      - name: Port-forward and test health endpoint
+        run: |
+          set -e
+
+          kubectl port-forward svc/flask-service 5000:80 >/dev/null 2>&1 &
+          PF_PID=$!
+
+          cleanup() { kill $PF_PID >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          sleep 8
+          curl --fail --retry 5 --retry-delay 3 http://localhost:5000/health
+
+      - name: Debug Kubernetes state (always)
+        if: always()
+        run: |
+          echo "=== Kubernetes Resources ==="
+          kubectl get all || true
+          echo "=== Deployment Description ==="
+          kubectl describe deployment flask-app || true
+          echo "=== Pod Description ==="
+          kubectl describe pod -l app=flask || true
+          echo "=== Pod Logs ==="
+          kubectl logs -l app=flask --tail=100 || true
