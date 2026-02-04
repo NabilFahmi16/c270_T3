@@ -53,8 +53,6 @@ jobs:
           echo "===== Flask app log ====="
           cat app.log || true
 
-
-          
   docker-test:
     runs-on: ubuntu-latest
     needs: test-and-lint
@@ -85,9 +83,51 @@ jobs:
 
           curl --fail --retry 5 --retry-delay 3 http://localhost:5000/health
 
-  kubernetes-test:
+  trivy-security:
     runs-on: ubuntu-latest
     needs: docker-test
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          # just install + cache DB; actual scans below
+          scan-type: "fs"
+          scan-ref: "."
+          format: "table"
+          exit-code: "0"
+
+      - name: Trivy FS scan (repo) - vuln + secrets + misconfig
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln,secret,misconfig"
+          format: "table"
+          exit-code: "1"
+
+      - name: Build Docker image (for Trivy image scan)
+        run: docker build -t my-flask-app:test -f dockerfile .
+
+      - name: Trivy image scan - vulnerabilities
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: "my-flask-app:test"
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          format: "table"
+          exit-code: "1"
+
+  kubernetes-test:
+    runs-on: ubuntu-latest
+    needs: trivy-security
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -118,7 +158,6 @@ jobs:
           set -e
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
-
 
       - name: Wait for deployment ready
         run: kubectl wait --for=condition=Available deployment/flask-app --timeout=180s
