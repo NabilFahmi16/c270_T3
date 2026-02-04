@@ -1,6 +1,7 @@
 # Core web framework
 Flask==3.0.3                  # Latest stable in 3.0.x series (security + bug fixes)
 Werkzeug==3.0.4               # Matches Flask 3.0.x (latest patch)
+playwright
 
 # Testing
 pytest==8.3.3                 # Latest stable (much newer than 7.4.3 - better plugins/support)
