@@ -430,7 +430,7 @@ def shorten():
     return jsonify({
         "message": "Link created successfully",
         "alias": alias,
-        "short_url": f"/go/{alias}"
+        "short_url": f"/go/123"
     }), 201
 
 @app.route('/go/<alias>')
